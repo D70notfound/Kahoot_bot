@@ -7,7 +7,7 @@ import re
 from flask import Flask, Response, request, jsonify, send_from_directory
 import requests as http
 
-from kahoot.solver import QuizSolver
+from kahoot.solver import QuizSolver, lookup_challenge_pin
 
 app = Flask(__name__)
 
@@ -40,9 +40,11 @@ def api_search():
         return jsonify({"success": False, "error": "Kein Suchbegriff angegeben"})
 
     if ok:
+        status = solver.get_status()
         return jsonify({
             "success": True,
-            "count": len(solver.quiz_answers),
+            "count": status["question_count"],
+            "title": status["quiz_title"] or "",
             "questions": solver.get_loaded_questions(),
         })
     return jsonify({"success": False, "error": "Kein Quiz gefunden"})
@@ -57,6 +59,37 @@ def api_answer():
     num = data.get("num_choices", 4)
     answer = solver.find_answer(idx, text, num)
     return jsonify({"answer": answer})
+
+
+@app.route("/_bot/api/detect", methods=["POST"])
+def api_detect():
+    """Try to auto-detect quiz from a game PIN (works for challenges)."""
+    data = request.get_json(silent=True) or {}
+    pin = data.get("pin", "").strip()
+
+    if not pin:
+        return jsonify({"success": False, "error": "Kein PIN"})
+
+    # Try challenge lookup
+    quiz_id = lookup_challenge_pin(pin)
+    if quiz_id:
+        ok = solver.load_quiz_by_id(quiz_id)
+        if ok:
+            status = solver.get_status()
+            return jsonify({
+                "success": True,
+                "quiz_id": quiz_id,
+                "quiz_title": status["quiz_title"],
+                "count": status["question_count"],
+            })
+
+    return jsonify({"success": False, "error": "Kein Quiz per PIN erkannt"})
+
+
+@app.route("/_bot/api/status", methods=["GET"])
+def api_status():
+    """Return current solver status."""
+    return jsonify(solver.get_status())
 
 
 @app.route("/_bot/static/<path:filename>")
@@ -107,6 +140,10 @@ def proxy(path):
     if "text/html" in content_type:
         content = _inject_overlay(content)
 
+    # Try to extract quiz info from proxied API responses
+    if "/kahoots/" in path or "/challenges/" in path:
+        _try_extract_quiz_info(content, content_type)
+
     # Rewrite redirect Location headers to point to our proxy
     response_headers = []
     for key, value in resp.headers.items():
@@ -144,6 +181,25 @@ def _rewrite_location(url: str) -> str:
     """Rewrite absolute kahoot.it URLs in redirects to our proxy."""
     url = re.sub(r"https?://kahoot\.it", "", url)
     return url
+
+
+def _try_extract_quiz_info(content: bytes, content_type: str):
+    """Try to extract and auto-load quiz info from proxied API responses."""
+    if "application/json" not in content_type:
+        return
+    try:
+        import json
+        data = json.loads(content)
+        uuid = (
+            data.get("uuid")
+            or data.get("quizId")
+            or data.get("kahootId")
+            or (data.get("kahoot", {}) or {}).get("uuid")
+        )
+        if uuid and uuid != solver.current_quiz_id:
+            solver.load_quiz_by_id(uuid)
+    except Exception:
+        pass
 
 
 # ─── Entry Point ──────────────────────────────────────────────────────
