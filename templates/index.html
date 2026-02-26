@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Kahoot Bot</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header>
+            <h1>Kahoot Bot</h1>
+            <p class="subtitle">Auto-Solver</p>
+        </header>
+
+        <!-- Join Screen -->
+        <div id="join-screen" class="screen active">
+            <div class="card">
+                <div class="input-group">
+                    <label for="pin">Spiel-PIN</label>
+                    <input type="number" id="pin" placeholder="123456" inputmode="numeric" autocomplete="off">
+                </div>
+                <div class="input-group">
+                    <label for="nickname">Nickname (optional)</label>
+                    <input type="text" id="nickname" placeholder="Zufälliger Name" autocomplete="off">
+                </div>
+
+                <details class="advanced-options">
+                    <summary>Erweiterte Optionen</summary>
+                    <div class="input-group">
+                        <label for="quiz-search">Quiz suchen (Titel/Thema)</label>
+                        <input type="text" id="quiz-search" placeholder="z.B. Mathe Klasse 10" autocomplete="off">
+                    </div>
+                    <div class="input-group">
+                        <label for="quiz-id">Quiz-ID (UUID)</label>
+                        <input type="text" id="quiz-id" placeholder="Falls bekannt" autocomplete="off">
+                    </div>
+                </details>
+
+                <div class="toggle-group">
+                    <label class="toggle">
+                        <input type="checkbox" id="auto-answer" checked>
+                        <span class="toggle-slider"></span>
+                        <span class="toggle-label">Auto-Antwort</span>
+                    </label>
+                </div>
+
+                <button id="join-btn" class="btn btn-primary">Spiel beitreten</button>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="screen">
+            <div class="card game-info">
+                <div class="question-header">
+                    <span id="question-number">Warte auf Frage...</span>
+                    <span id="timer" class="timer"></span>
+                </div>
+                <div id="question-text" class="question-text"></div>
+            </div>
+
+            <div id="answer-buttons" class="answer-grid">
+                <button class="answer-btn red" data-choice="0" onclick="submitAnswer(0)">
+                    <span class="shape">&#9650;</span> Rot
+                </button>
+                <button class="answer-btn blue" data-choice="1" onclick="submitAnswer(1)">
+                    <span class="shape">&#9670;</span> Blau
+                </button>
+                <button class="answer-btn yellow" data-choice="2" onclick="submitAnswer(2)">
+                    <span class="shape">&#9679;</span> Gelb
+                </button>
+                <button class="answer-btn green" data-choice="3" onclick="submitAnswer(3)">
+                    <span class="shape">&#9632;</span> Grün
+                </button>
+            </div>
+
+            <button id="leave-btn" class="btn btn-danger" onclick="leaveGame()">Spiel verlassen</button>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="gameover-screen" class="screen">
+            <div class="card gameover-card">
+                <h2>Spiel vorbei!</h2>
+                <div class="score-display">
+                    <div class="score-item">
+                        <span class="score-label">Platz</span>
+                        <span id="final-rank" class="score-value">-</span>
+                    </div>
+                    <div class="score-item">
+                        <span class="score-label">Punkte</span>
+                        <span id="final-score" class="score-value">-</span>
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="resetGame()">Neues Spiel</button>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div id="status-bar">
+            <div id="status-log"></div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
