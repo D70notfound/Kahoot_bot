@@ -1,8 +1,10 @@
 """Kahoot game client – handles session reservation, token decoding, and
 CometD WebSocket communication for joining and playing Kahoot games."""
 
+import ast
 import base64
 import json
+import operator
 import re
 import threading
 import time
@@ -18,6 +20,41 @@ KAHOOT_BASE = "https://kahoot.it"
 KAHOOT_API = "https://create.kahoot.it/rest/kahoots"
 
 ANSWER_NAMES = {0: "Red", 1: "Blue", 2: "Yellow", 3: "Green"}
+
+_SAFE_OPS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+    ast.USub: operator.neg,
+    ast.UAdd: operator.pos,
+}
+
+
+def _safe_eval_arithmetic(expr: str):
+    """Safely evaluate a simple arithmetic expression (digits + operators only)."""
+    tree = ast.parse(expr.strip(), mode="eval")
+
+    def _eval(node):
+        if isinstance(node, ast.Expression):
+            return _eval(node.body)
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+        if isinstance(node, ast.BinOp):
+            op = _SAFE_OPS.get(type(node.op))
+            if op is None:
+                raise ValueError(f"Unsupported operator: {type(node.op).__name__}")
+            return op(_eval(node.left), _eval(node.right))
+        if isinstance(node, ast.UnaryOp):
+            op = _SAFE_OPS.get(type(node.op))
+            if op is None:
+                raise ValueError(f"Unsupported unary op: {type(node.op).__name__}")
+            return op(_eval(node.operand))
+        raise ValueError(f"Unsupported expression: {type(node).__name__}")
+
+    return _eval(tree)
 
 
 # ---------------------------------------------------------------------------
@@ -49,11 +86,11 @@ def _decode_challenge(challenge_text: str) -> str:
         raise ValueError("Could not extract return expression from challenge")
     expr = ret_match.group(1).strip()
 
-    # Safe-evaluate the arithmetic expression (only digits and operators)
+    # Safe-evaluate the arithmetic expression using AST
     expr_clean = re.sub(r"[^0-9+\-*/%() ]", "", expr)
     if not expr_clean:
         raise ValueError("Challenge expression is empty after sanitization")
-    offset_val = eval(expr_clean)  # noqa: S307 – intentionally limited
+    offset_val = _safe_eval_arithmetic(expr_clean)
 
     return _xor_decode(encoded, offset_val)
 
@@ -269,10 +306,11 @@ class KahootClient:
         self._emit_status(f'Beigetreten als "{self.nickname}"!')
 
     def _handle_connect(self, msg: dict) -> None:
-        # Keep the CometD connection alive
+        # Keep the CometD connection alive without blocking the WS thread
         if msg.get("successful"):
-            time.sleep(0.5)
-            threading.Thread(target=self._send_connect, daemon=True).start()
+            timer = threading.Timer(0.5, self._send_connect)
+            timer.daemon = True
+            timer.start()
 
     def _handle_player_message(self, msg: dict) -> None:
         data = msg.get("data", {})

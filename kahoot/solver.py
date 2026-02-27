@@ -9,6 +9,7 @@ Strategies for finding the quiz:
 """
 
 import re
+import threading
 from difflib import SequenceMatcher
 from typing import Optional
 
@@ -109,6 +110,7 @@ class QuizSolver:
     the correct answer automatically."""
 
     def __init__(self):
+        self._lock = threading.Lock()
         self.quiz_answers: list[dict] = []
         self.current_quiz_id: Optional[str] = None
         self.current_quiz_title: Optional[str] = None
@@ -127,9 +129,12 @@ class QuizSolver:
             return False
 
         # Load ALL matching quizzes (not just the first)
-        self._all_loaded = []
+        all_loaded = []
         best_quiz = None
         best_score = -1
+        best_answers = []
+        best_uuid = None
+        best_title = None
 
         for quiz_summary in quizzes:
             uuid = (
@@ -144,7 +149,7 @@ class QuizSolver:
                 continue
 
             answers = extract_answers(quiz)
-            self._all_loaded.append(answers)
+            all_loaded.append(answers)
 
             # Score this quiz by title similarity to search term
             title = quiz.get("title", "")
@@ -154,9 +159,16 @@ class QuizSolver:
             if score > best_score:
                 best_score = score
                 best_quiz = quiz
-                self.quiz_answers = answers
-                self.current_quiz_id = uuid
-                self.current_quiz_title = title
+                best_answers = answers
+                best_uuid = uuid
+                best_title = title
+
+        if best_quiz is not None:
+            with self._lock:
+                self.quiz_answers = best_answers
+                self.current_quiz_id = best_uuid
+                self.current_quiz_title = best_title
+                self._all_loaded = all_loaded
 
         return best_quiz is not None
 
@@ -165,10 +177,12 @@ class QuizSolver:
         quiz = fetch_quiz_details(uuid)
         if not quiz:
             return False
-        self.quiz_answers = extract_answers(quiz)
-        self.current_quiz_id = uuid
-        self.current_quiz_title = quiz.get("title", "")
-        self._all_loaded = [self.quiz_answers]
+        answers = extract_answers(quiz)
+        with self._lock:
+            self.quiz_answers = answers
+            self.current_quiz_id = uuid
+            self.current_quiz_title = quiz.get("title", "")
+            self._all_loaded = [self.quiz_answers]
         return True
 
     def load_quiz_by_pin(self, pin: str) -> bool:
@@ -188,27 +202,28 @@ class QuizSolver:
         3. Index match in all loaded quizzes
         4. None if no match found
         """
-        if not self.quiz_answers and not self._all_loaded:
-            return None
+        with self._lock:
+            if not self.quiz_answers and not self._all_loaded:
+                return None
 
-        # Strategy 1: text matching (best for randomized questions)
-        if question_text:
-            result = self._match_by_text(question_text)
-            if result is not None:
-                return result
+            # Strategy 1: text matching (best for randomized questions)
+            if question_text:
+                result = self._match_by_text(question_text)
+                if result is not None:
+                    return result
 
-        # Strategy 2: direct index match in primary quiz
-        if question_index < len(self.quiz_answers):
-            entry = self.quiz_answers[question_index]
-            if entry["correct"]:
-                return entry["correct"][0]
-
-        # Strategy 3: index match across all loaded quizzes
-        for answers in self._all_loaded:
-            if question_index < len(answers):
-                entry = answers[question_index]
+            # Strategy 2: direct index match in primary quiz
+            if question_index < len(self.quiz_answers):
+                entry = self.quiz_answers[question_index]
                 if entry["correct"]:
                     return entry["correct"][0]
+
+            # Strategy 3: index match across all loaded quizzes
+            for answers in self._all_loaded:
+                if question_index < len(answers):
+                    entry = answers[question_index]
+                    if entry["correct"]:
+                        return entry["correct"][0]
 
         return None
 
@@ -244,17 +259,19 @@ class QuizSolver:
         return None
 
     def get_loaded_questions(self) -> list[dict]:
-        return self.quiz_answers
+        with self._lock:
+            return list(self.quiz_answers)
 
     def get_status(self) -> dict:
         """Return current solver status."""
-        return {
-            "loaded": len(self.quiz_answers) > 0,
-            "quiz_id": self.current_quiz_id,
-            "quiz_title": self.current_quiz_title,
-            "question_count": len(self.quiz_answers),
-            "total_quizzes_loaded": len(self._all_loaded),
-        }
+        with self._lock:
+            return {
+                "loaded": len(self.quiz_answers) > 0,
+                "quiz_id": self.current_quiz_id,
+                "quiz_title": self.current_quiz_title,
+                "question_count": len(self.quiz_answers),
+                "total_quizzes_loaded": len(self._all_loaded),
+            }
 
 
 # ─── Text Matching Helpers ────────────────────────────────────────────
