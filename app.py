@@ -3,6 +3,7 @@
 with an overlay injected for answer suggestions and auto-answering."""
 
 import re
+import threading
 
 from flask import Flask, Response, request, jsonify, send_from_directory
 import requests as http
@@ -184,7 +185,8 @@ def _rewrite_location(url: str) -> str:
 
 
 def _try_extract_quiz_info(content: bytes, content_type: str):
-    """Try to extract and auto-load quiz info from proxied API responses."""
+    """Try to extract and auto-load quiz info from proxied API responses.
+    Runs the actual loading in a background thread to avoid blocking the proxy."""
     if "application/json" not in content_type:
         return
     try:
@@ -197,7 +199,9 @@ def _try_extract_quiz_info(content: bytes, content_type: str):
             or (data.get("kahoot", {}) or {}).get("uuid")
         )
         if uuid and uuid != solver.current_quiz_id:
-            solver.load_quiz_by_id(uuid)
+            threading.Thread(
+                target=solver.load_quiz_by_id, args=(uuid,), daemon=True
+            ).start()
     except Exception:
         pass
 

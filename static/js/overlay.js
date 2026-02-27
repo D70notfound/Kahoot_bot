@@ -360,13 +360,14 @@
       // ── Question End / Results ──
       const correct = content.correctChoices || content.correctAnswers || [];
       const points = content.points || content.pointsData?.totalPointsWithBonuses || 0;
+      const isCorrect = content.isCorrect === true || content.correct === true || points > 0;
 
-      if (points > 0) {
+      if (isCorrect) {
         state.totalCorrect++;
         log("Richtig! +" + points + " Punkte");
       } else {
         const names = correct.map(choiceName).join(", ");
-        log("Falsch. Richtig war: " + names);
+        log("Falsch. Richtig war: " + (names || "unbekannt"));
       }
       updateScoreBadge();
       clearHighlight();
@@ -510,33 +511,54 @@
       () => document.querySelectorAll('[data-functional-selector^="answer-"]'),
       () => document.querySelectorAll('button[data-choice]'),
       () => {
-        // Look for answer containers (Kahoot uses colored divs/buttons)
+        // Look for answer containers by common class patterns
         const containers = document.querySelectorAll(
-          '[class*="answer-container"], [class*="AnswerContainer"], [class*="answer-button"]'
+          '[class*="answer-container"], [class*="AnswerContainer"], [class*="answer-button"], [class*="choice"]'
         );
         if (containers.length >= 2) return containers;
 
-        // Look for the large colored buttons
-        const allBtns = document.querySelectorAll("button, [role='button']");
-        const answerBtns = [];
+        // Heuristic: find large, visible, similarly-sized buttons in the lower
+        // portion of the screen.  Instead of matching specific RGB values
+        // (which break when Kahoot changes its palette), we look for a group
+        // of 2-4 buttons that share similar dimensions – a strong signal for
+        // the answer grid.
+        const allBtns = document.querySelectorAll("button, [role='button'], [class*='answer']");
+        const candidates = [];
         allBtns.forEach((btn) => {
           const rect = btn.getBoundingClientRect();
-          // Answer buttons are large and visible
-          if (rect.width > 60 && rect.height > 40 && rect.top > 100) {
-            const style = window.getComputedStyle(btn);
-            const bg = style.backgroundColor;
-            // Check for Kahoot answer colors
-            if (
-              bg.includes("226") || bg.includes("228") || // red
-              bg.includes("19")  || bg.includes("104") || // blue
-              bg.includes("216") || bg.includes("158") || // yellow/orange
-              bg.includes("38")  || bg.includes("137")    // green
-            ) {
-              answerBtns.push(btn);
-            }
+          if (
+            rect.width > 60 &&
+            rect.height > 40 &&
+            rect.top > 100 &&
+            rect.bottom <= window.innerHeight &&
+            btn.offsetParent !== null // visible
+          ) {
+            candidates.push({ el: btn, w: Math.round(rect.width), h: Math.round(rect.height) });
           }
         });
-        return answerBtns;
+
+        // Group by similar size (within 20px tolerance)
+        const groups = [];
+        for (const c of candidates) {
+          let placed = false;
+          for (const g of groups) {
+            if (Math.abs(g[0].w - c.w) < 20 && Math.abs(g[0].h - c.h) < 20) {
+              g.push(c);
+              placed = true;
+              break;
+            }
+          }
+          if (!placed) groups.push([c]);
+        }
+
+        // Pick the group with 2-4 members (answer grid)
+        for (const g of groups) {
+          if (g.length >= 2 && g.length <= 4) {
+            return g.map((c) => c.el);
+          }
+        }
+
+        return [];
       },
     ];
 
