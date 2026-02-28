@@ -1,1 +1,9 @@
 __pycache__/
+.buildozer/
+android-app/app/build/
+android-app/.gradle/
+android-app/build/
+android-app/gradle/
+android-app/local.properties
+*.iml
+.idea/

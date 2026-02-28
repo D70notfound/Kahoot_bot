@@ -19,7 +19,20 @@ python app.py
 
 Öffne `http://localhost:8080` im Browser.
 
-### Auf dem Handy (Android mit Termux)
+### Als Android APK
+
+Die APK selbst bauen (braucht Linux/macOS + Java JDK):
+
+```bash
+git clone https://github.com/D70notfound/Kahoot_bot.git
+cd Kahoot_bot
+pip install buildozer cython
+./build_apk.sh
+```
+
+Die fertige APK liegt dann in `bin/`. Auf dem Handy installieren und starten.
+
+### Auf dem Handy (Alternative: Termux)
 
 1. **Termux** aus dem F-Droid Store installieren
 2. In Termux:
@@ -59,6 +72,9 @@ python app.py
 ```
 Kahoot_bot/
 ├── app.py                 # Flask Reverse-Proxy + API
+├── main.py                # Android APK Entry Point (Kivy + WebView)
+├── buildozer.spec         # APK Build-Konfiguration
+├── build_apk.sh           # Build-Script fuer die APK
 ├── requirements.txt       # Python-Abhängigkeiten
 ├── kahoot/
 │   ├── client.py          # Standalone Kahoot-Client (Fallback)
